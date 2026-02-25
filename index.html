@@ -78,7 +78,6 @@
             <input type="number" id="searchInput" placeholder="Search BIP #" style="flex-grow: 1;" onkeypress="if(event.key === 'Enter') searchNode()" disabled>
             <button id="searchBtn" onclick="searchNode()" disabled>Find</button>
         </div>
-        <button id="resetViewBtn" class="secondary" onclick="resetView()" disabled>Reset View</button>
     </div>
     
     <div id="progress-container" style="display: none;">
@@ -293,7 +292,6 @@
         
         document.getElementById('searchInput').disabled = false;
         document.getElementById('searchBtn').disabled = false;
-        document.getElementById('resetViewBtn').disabled = false;
         btn.disabled = false;
     }
 
@@ -363,13 +361,6 @@
         goToNode(bipNum);
     }
 
-    function resetView() {
-        if (network) {
-            network.fit({ animation: true });
-        }
-    }
-
-    // Automatically load the tree when the page finishes loading
     window.addEventListener('DOMContentLoaded', buildBipTree);
 </script>
 
