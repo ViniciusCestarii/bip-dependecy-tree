@@ -30,7 +30,6 @@
         .progress-bar-bg { background: #e2e8f0; border-radius: 4px; height: 8px; width: 100%; overflow: hidden; }
         .progress-bar-fill { background: #f7931a; height: 100%; width: 0%; transition: width 0.1s; }
 
-        /* New Details Panel Styles */
         #details-panel {
             display: none; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;
         }
@@ -60,7 +59,7 @@
     <button id="fetchBtn" onclick="buildBipTree()">Generate Tree</button>
     
     <div id="progress-container" style="display: none;">
-        <span id="status-text">Fetching data...</span>
+        <span id="status-text">Fetching repository index...</span>
         <div class="progress-bar-bg">
             <div id="progress-fill" class="progress-bar-fill"></div>
         </div>
@@ -77,31 +76,38 @@
 <div id="network-container"></div>
 
 <script>
-    const MAX_BIP_NUMBER = 400; 
-    const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/bitcoin/bips/master/bip-";
-    const GITHUB_WEB_BASE = "https://github.com/bitcoin/bips/blob/master/bip-";
+    const GITHUB_REPO_TREE = "https://api.github.com/repos/bitcoin/bips/git/trees/master";
+    const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/bitcoin/bips/master/";
+    const GITHUB_WEB_BASE = "https://github.com/bitcoin/bips/blob/master/";
 
-    function padNumber(num) {
-        return num.toString().padStart(4, '0');
+    async function fetchRepoTree() {
+        const response = await fetch(GITHUB_REPO_TREE);
+        if (!response.ok) throw new Error("Failed to fetch repository tree.");
+        const data = await response.json();
+        
+        const bipFiles = [];
+        const bipRegex = /^bip-(\d{4})\.(mediawiki|md)$/i;
+
+        for (const file of data.tree) {
+            const match = file.path.match(bipRegex);
+            if (match) {
+                bipFiles.push({
+                    number: parseInt(match[1], 10),
+                    filename: file.path
+                });
+            }
+        }
+        return bipFiles;
     }
 
-    async function fetchBipData(num) {
-        const paddedNum = padNumber(num);
-        let ext = '.mediawiki';
-        let response = await fetch(`${GITHUB_RAW_BASE}${paddedNum}${ext}`);
-        
-        if (!response.ok) {
-            ext = '.md';
-            response = await fetch(`${GITHUB_RAW_BASE}${paddedNum}${ext}`);
-        }
-
+    async function fetchBipData(bipInfo) {
+        const response = await fetch(`${GITHUB_RAW_BASE}${bipInfo.filename}`);
         if (!response.ok) return null;
         
         const text = await response.text();
-        const parsedData = parseBipHeader(text, num);
+        const parsedData = parseBipHeader(text, bipInfo.number);
         
-        // Construct the readable GitHub web URL
-        parsedData.githubUrl = `${GITHUB_WEB_BASE}${paddedNum}${ext}`;
+        parsedData.githubUrl = `${GITHUB_WEB_BASE}${bipInfo.filename}`;
         return parsedData;
     }
 
@@ -152,22 +158,36 @@
         
         btn.disabled = true;
         progressContainer.style.display = 'block';
-        detailsPanel.style.display = 'none'; // Hide details on new fetch
+        detailsPanel.style.display = 'none';
+        progressFill.style.width = '0%';
+        statusText.innerText = 'Fetching repository index...';
         
+        let bipFiles;
+        try {
+            bipFiles = await fetchRepoTree();
+        } catch (error) {
+            statusText.innerText = "Error fetching repository index.";
+            btn.disabled = false;
+            return;
+        }
+
         const nodesData = [];
         const edgesData = [];
         let completed = 0;
+        const totalBips = bipFiles.length;
 
         const batchSize = 50;
-        for (let i = 1; i <= MAX_BIP_NUMBER; i += batchSize) {
+        for (let i = 0; i < totalBips; i += batchSize) {
             const batchPromises = [];
-            for (let j = i; j < i + batchSize && j <= MAX_BIP_NUMBER; j++) {
+            const batch = bipFiles.slice(i, i + batchSize);
+            
+            for (let bipInfo of batch) {
                 batchPromises.push(
-                    fetchBipData(j).then(result => {
+                    fetchBipData(bipInfo).then(result => {
                         completed++;
-                        const percent = Math.round((completed / MAX_BIP_NUMBER) * 100);
+                        const percent = Math.round((completed / totalBips) * 100);
                         progressFill.style.width = percent + '%';
-                        statusText.innerText = `Fetching... ${percent}%`;
+                        statusText.innerText = `Fetching content... ${percent}%`;
                         return result;
                     })
                 );
@@ -177,7 +197,6 @@
             
             for (let bip of batchResults) {
                 if (bip) {
-                    // Include extra data in the node object for the click event
                     nodesData.push({ 
                         id: bip.id, 
                         label: formatLabel(bip.id, bip.title),
@@ -216,7 +235,6 @@
 
         const network = new vis.Network(container, data, options);
         
-        // Add click event listener for nodes
         network.on("selectNode", function (params) {
             const nodeId = params.nodes[0];
             const nodeData = nodesDataSet.get(nodeId);
@@ -233,7 +251,6 @@
             document.getElementById('detail-link').href = nodeData.githubUrl;
         });
 
-        // Hide panel when clicking empty space
         network.on("deselectNode", function () {
             detailsPanel.style.display = 'none';
         });
