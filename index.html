@@ -42,15 +42,20 @@
         }
         #detail-bip-number { margin: 0 0 8px 0; font-size: 18px; color: #1a1a1a; }
         #detail-title { font-weight: 600; color: #475569; font-size: 14px; margin: 0 0 12px 0; line-height: 1.4; }
-        #detail-requires { font-size: 13px; color: #64748b; margin: 0 0 16px 0; }
+        
+        .dependency-row { font-size: 13px; color: #64748b; margin: 0 0 8px 0; }
+        #detail-required-by { margin-bottom: 16px; }
+        
         .req-link {
             color: #f7931a; text-decoration: none; font-weight: 600; cursor: pointer;
         }
         .req-link:hover { text-decoration: underline; color: #e08517; }
+        
         #detail-link {
             display: inline-block; background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
             text-decoration: none; color: #0f172a; font-size: 13px; font-weight: 600; border: 1px solid #e2e8f0;
             transition: background-color 0.2s;
+            margin-top: 8px;
         }
         #detail-link:hover { background: #e2e8f0; }
 
@@ -86,7 +91,8 @@
     <div id="details-panel">
         <h2 id="detail-bip-number"></h2>
         <p id="detail-title"></p>
-        <div id="detail-requires"></div>
+        <div id="detail-requires" class="dependency-row"></div>
+        <div id="detail-required-by" class="dependency-row"></div>
         <a id="detail-link" href="#" target="_blank">View on GitHub</a>
     </div>
 </div>
@@ -290,6 +296,33 @@
         document.getElementById('resetViewBtn').disabled = false;
     }
 
+    function createClickableLinks(containerId, prefixText, idsArray) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = ''; 
+
+        if (idsArray && idsArray.length > 0) {
+            container.appendChild(document.createTextNode(prefixText));
+            
+            idsArray.forEach((id, index) => {
+                const link = document.createElement('a');
+                link.textContent = id;
+                link.href = '#';
+                link.className = 'req-link';
+                link.onclick = (e) => {
+                    e.preventDefault();
+                    goToNode(id);
+                };
+                container.appendChild(link);
+                
+                if (index < idsArray.length - 1) {
+                    container.appendChild(document.createTextNode(', '));
+                }
+            });
+        } else {
+            container.innerText = `${prefixText}None`;
+        }
+    }
+
     function showDetails(nodeId) {
         const nodeData = nodesDataSet.get(nodeId);
         const detailsPanel = document.getElementById('details-panel');
@@ -298,30 +331,16 @@
         document.getElementById('detail-bip-number').innerText = `BIP ${nodeData.id}`;
         document.getElementById('detail-title').innerText = nodeData.fullTitle;
         
-        const reqContainer = document.getElementById('detail-requires');
-        reqContainer.innerHTML = ''; 
+        createClickableLinks('detail-requires', 'Requires: ', nodeData.requiresList);
 
-        if (nodeData.requiresList && nodeData.requiresList.length > 0) {
-            reqContainer.appendChild(document.createTextNode('Requires: '));
-            
-            nodeData.requiresList.forEach((reqId, index) => {
-                const link = document.createElement('a');
-                link.textContent = reqId;
-                link.href = '#';
-                link.className = 'req-link';
-                link.onclick = (e) => {
-                    e.preventDefault();
-                    goToNode(reqId);
-                };
-                reqContainer.appendChild(link);
-                
-                if (index < nodeData.requiresList.length - 1) {
-                    reqContainer.appendChild(document.createTextNode(', '));
-                }
-            });
-        } else {
-            reqContainer.innerText = 'Requires: None';
-        }
+        const requiredByEdges = edgesDataSet.get({
+            filter: function (item) {
+                return item.to === nodeId;
+            }
+        });
+        const requiredByList = requiredByEdges.map(edge => edge.from);
+        
+        createClickableLinks('detail-required-by', 'Required by: ', requiredByList);
 
         document.getElementById('detail-link').href = nodeData.githubUrl;
     }
