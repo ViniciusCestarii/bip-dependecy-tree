@@ -12,8 +12,9 @@
             display: flex; height: 100vh; background-color: #f8f9fa; color: #333;
         }
         #sidebar {
-            width: 320px; background: #ffffff; box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+            width: 340px; background: #ffffff; box-shadow: 2px 0 10px rgba(0,0,0,0.05);
             padding: 24px; display: flex; flex-direction: column; z-index: 10;
+            overflow-y: auto;
         }
         h1 { font-size: 20px; margin-top: 0; color: #1a1a1a; }
         p { font-size: 14px; color: #666; line-height: 1.5; }
@@ -41,7 +42,13 @@
             display: none; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;
         }
         #detail-bip-number { margin: 0 0 8px 0; font-size: 18px; color: #1a1a1a; }
-        #detail-title { font-weight: 600; color: #475569; font-size: 14px; margin: 0 0 12px 0; line-height: 1.4; }
+        #detail-title { font-weight: 600; color: #475569; font-size: 14px; margin: 0 0 16px 0; line-height: 1.4; }
+        
+        .meta-grid {
+            display: grid; grid-template-columns: 60px 1fr; gap: 8px;
+            font-size: 13px; color: #333; margin-bottom: 16px;
+        }
+        .meta-label { font-weight: 600; color: #64748b; }
         
         .dependency-row { font-size: 13px; color: #64748b; margin: 0 0 8px 0; }
         #detail-required-by { margin-bottom: 16px; }
@@ -55,7 +62,7 @@
             display: inline-block; background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
             text-decoration: none; color: #0f172a; font-size: 13px; font-weight: 600; border: 1px solid #e2e8f0;
             transition: background-color 0.2s;
-            margin-top: 8px;
+            margin-top: 8px; text-align: center;
         }
         #detail-link:hover { background: #e2e8f0; }
 
@@ -90,6 +97,18 @@
     <div id="details-panel">
         <h2 id="detail-bip-number"></h2>
         <p id="detail-title"></p>
+        
+        <div class="meta-grid">
+            <span class="meta-label">Status:</span>
+            <span id="detail-status"></span>
+            
+            <span class="meta-label">Type:</span>
+            <span id="detail-type"></span>
+            
+            <span class="meta-label">Layer:</span>
+            <span id="detail-layer"></span>
+        </div>
+
         <div id="detail-requires" class="dependency-row"></div>
         <div id="detail-required-by" class="dependency-row"></div>
         <a id="detail-link" href="#" target="_blank">View on GitHub</a>
@@ -142,6 +161,10 @@
         const titleMatch = text.match(/Title:\s*(.+)/i);
         const title = titleMatch ? titleMatch[1].trim() : "Unknown Title";
 
+        const layerMatch = text.match(/Layer:\s*(.+)/i);
+        const statusMatch = text.match(/Status:\s*(.+)/i);
+        const typeMatch = text.match(/Type:\s*(.+)/i);
+
         const requiresMatch = text.match(/Requires:\s*([0-9,\s]+)/i);
         const requires = [];
 
@@ -155,7 +178,14 @@
             }
         }
 
-        return { id: currentNum, title: title, requires: requires };
+        return { 
+            id: currentNum, 
+            title: title, 
+            layer: layerMatch ? layerMatch[1].trim() : "N/A",
+            status: statusMatch ? statusMatch[1].trim() : "N/A",
+            type: typeMatch ? typeMatch[1].trim() : "N/A",
+            requires: requires 
+        };
     }
 
     function formatLabel(id, title) {
@@ -229,6 +259,9 @@
                         label: formatLabel(bip.id, bip.title),
                         title: `BIP ${bip.id}: ${bip.title}`, 
                         fullTitle: bip.title,
+                        bipLayer: bip.layer,
+                        bipStatus: bip.status,
+                        bipType: bip.type,
                         githubUrl: bip.githubUrl,
                         requiresList: bip.requires,
                         shape: 'box', margin: 12,
@@ -329,6 +362,10 @@
         detailsPanel.style.display = 'block';
         document.getElementById('detail-bip-number').innerText = `BIP ${nodeData.id}`;
         document.getElementById('detail-title').innerText = nodeData.fullTitle;
+        
+        document.getElementById('detail-status').innerText = nodeData.bipStatus;
+        document.getElementById('detail-type').innerText = nodeData.bipType;
+        document.getElementById('detail-layer').innerText = nodeData.bipLayer;
         
         createClickableLinks('detail-requires', 'Requires: ', nodeData.requiresList);
 
