@@ -58,6 +58,14 @@
         .progress-bar-bg { background: #e2e8f0; border-radius: 4px; height: 8px; width: 100%; overflow: hidden; }
         .progress-bar-fill { background: #f7931a; height: 100%; width: 0%; transition: width 0.1s; }
 
+        #isolated-bips-container { display: none; margin-top: 15px; }
+        details summary { font-size: 13px; font-weight: 600; color: #64748b; cursor: pointer; outline: none; }
+        #isolated-list {
+            margin-top: 8px; font-size: 12px; color: #666; max-height: 120px;
+            overflow-y: auto; padding: 10px; background: #f8f9fa;
+            border: 1px solid #e2e8f0; border-radius: 6px; line-height: 1.6;
+        }
+
         #details-panel {
             display: none; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;
         }
@@ -92,7 +100,6 @@
             color: #fff; padding: 8px 12px; border-radius: 4px; border: none;
         }
 
-        /* Mobile Responsiveness */
         @media (max-width: 768px) {
             #menu-toggle { display: block; }
             #close-sidebar { display: block; }
@@ -128,6 +135,13 @@
         </div>
     </div>
 
+    <div id="isolated-bips-container">
+        <details>
+            <summary><span id="isolated-count">0</span> Isolated BIPs Hidden from Graph</summary>
+            <div id="isolated-list"></div>
+        </details>
+    </div>
+
     <div id="details-panel">
         <h2 id="detail-bip-number"></h2>
         <p id="detail-title"></p>
@@ -159,6 +173,7 @@
     let network = null;
     let nodesDataSet = null;
     let edgesDataSet = null;
+    let fullNodesData = []; 
 
     function toggleSidebar(forceOpen = false) {
         const sidebar = document.getElementById('sidebar');
@@ -255,10 +270,12 @@
         const statusText = document.getElementById('status-text');
         const progressFill = document.getElementById('progress-fill');
         const detailsPanel = document.getElementById('details-panel');
+        const isolatedContainer = document.getElementById('isolated-bips-container');
         
         btn.disabled = true;
         progressContainer.style.display = 'block';
         detailsPanel.style.display = 'none';
+        isolatedContainer.style.display = 'none';
         progressFill.style.width = '0%';
         statusText.innerText = 'Fetching repository index...';
         
@@ -271,7 +288,7 @@
             return;
         }
 
-        const nodesData = [];
+        fullNodesData = [];
         const edgesData = [];
         let completed = 0;
         const totalBips = bipFiles.length;
@@ -297,7 +314,7 @@
             
             for (let bip of batchResults) {
                 if (bip) {
-                    nodesData.push({ 
+                    fullNodesData.push({ 
                         id: bip.id, 
                         label: formatLabel(bip.id, bip.title),
                         title: `BIP ${bip.id}: ${bip.title}`, 
@@ -325,10 +342,78 @@
             }
         }
 
+        statusText.innerText = `Filtering isolated nodes...`;
+
+        const connectedNodeIds = new Set();
+        edgesData.forEach(edge => {
+            connectedNodeIds.add(edge.from);
+            connectedNodeIds.add(edge.to);
+        });
+
+        const filteredNodesData = fullNodesData.filter(node => connectedNodeIds.has(node.id));
+        const isolatedNodesData = fullNodesData.filter(node => !connectedNodeIds.has(node.id));
+
+        document.getElementById('isolated-count').innerText = isolatedNodesData.length;
+        const isolatedListDiv = document.getElementById('isolated-list');
+        isolatedListDiv.innerHTML = '';
+        
+        isolatedNodesData.forEach((node, index) => {
+            const link = document.createElement('a');
+            link.href = '#';
+            link.className = 'req-link';
+            link.innerText = node.id;
+            link.onclick = (e) => {
+                e.preventDefault();
+                goToNode(node.id);
+            };
+            isolatedListDiv.appendChild(link);
+            
+            if (index < isolatedNodesData.length - 1) {
+                isolatedListDiv.appendChild(document.createTextNode(', '));
+            }
+        });
+        
+        isolatedContainer.style.display = 'block';
+
+        statusText.innerText = `Calculating dependency depth...`;
+
+        const nodesMap = new Map();
+        filteredNodesData.forEach(n => nodesMap.set(n.id, n));
+        const nodeLevels = new Map();
+
+        function getLevel(nodeId, visited = new Set()) {
+            if (nodeLevels.has(nodeId)) return nodeLevels.get(nodeId);
+            if (visited.has(nodeId)) return 0; 
+            
+            visited.add(nodeId);
+            const node = nodesMap.get(nodeId);
+            
+            if (!node || !node.requiresList || node.requiresList.length === 0) {
+                nodeLevels.set(nodeId, 0);
+                return 0;
+            }
+
+            let maxReqLevel = -1;
+            for (let reqId of node.requiresList) {
+                const reqLevel = getLevel(reqId, new Set(visited));
+                if (reqLevel > maxReqLevel) {
+                    maxReqLevel = reqLevel;
+                }
+            }
+
+            const level = maxReqLevel + 1;
+            nodeLevels.set(nodeId, level);
+            return level;
+        }
+
+        filteredNodesData.forEach(node => {
+            node.level = getLevel(node.id);
+        });
+
         statusText.innerText = `Rendering graph...`;
 
         const container = document.getElementById('network-container');
-        nodesDataSet = new vis.DataSet(nodesData);
+        nodesDataSet = new vis.DataSet(filteredNodesData);
         edgesDataSet = new vis.DataSet(edgesData);
         
         const data = { nodes: nodesDataSet, edges: edgesDataSet };
@@ -336,14 +421,20 @@
         const options = {
             layout: { 
                 hierarchical: { 
-                    direction: 'UD', 
-                    sortMethod: 'directed', 
-                    nodeSpacing: 180, 
-                    levelSeparation: 150, 
+                    direction: 'UD',
+                    nodeSpacing: 140, 
+                    levelSeparation: 160, 
+                    treeSpacing: 120,
                     parentCentralization: true 
                 }
             },
-            physics: { enabled: false }, 
+            physics: { 
+                enabled: true,
+                hierarchicalRepulsion: {
+                    nodeDistance: 140,
+                    avoidOverlap: 1
+                }
+            }, 
             interaction: { 
                 hover: true, 
                 tooltipDelay: 200,
@@ -401,8 +492,10 @@
         }
     }
 
-    function showDetails(nodeId) {
-        const nodeData = nodesDataSet.get(nodeId);
+    function showDetails(nodeId, explicitNodeData = null) {
+        const nodeData = explicitNodeData || nodesDataSet.get(nodeId);
+        if (!nodeData) return;
+
         const detailsPanel = document.getElementById('details-panel');
         
         detailsPanel.style.display = 'block';
@@ -428,13 +521,27 @@
     }
 
     function goToNode(bipNum) {
-        if (!network || !nodesDataSet.get(bipNum)) {
-            alert(`BIP ${bipNum} not found in current dataset.`);
-            return;
+        if (!network) return;
+        
+        const inGraph = nodesDataSet.get(bipNum);
+        
+        if (inGraph) {
+            network.selectNodes([bipNum]);
+            network.focus(bipNum, { scale: 1.2, animation: true });
+            document.getElementById('detail-link').style.display = 'inline-block';
+            showDetails(bipNum);
+        } else {
+            const isolatedNodeData = fullNodesData.find(n => n.id === bipNum);
+            if (isolatedNodeData) {
+                network.unselectAll(); 
+                document.getElementById('detail-link').style.display = 'inline-block';
+                showDetails(bipNum, isolatedNodeData);
+            } else {
+                alert(`BIP ${bipNum} not found in the repository index.`);
+                return;
+            }
         }
-        network.selectNodes([bipNum]);
-        network.focus(bipNum, { scale: 1.2, animation: true });
-        showDetails(bipNum);
+        
         if (window.innerWidth <= 768) {
             toggleSidebar(true);
         }
