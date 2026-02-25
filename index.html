@@ -43,6 +43,10 @@
         #detail-bip-number { margin: 0 0 8px 0; font-size: 18px; color: #1a1a1a; }
         #detail-title { font-weight: 600; color: #475569; font-size: 14px; margin: 0 0 12px 0; line-height: 1.4; }
         #detail-requires { font-size: 13px; color: #64748b; margin: 0 0 16px 0; }
+        .req-link {
+            color: #f7931a; text-decoration: none; font-weight: 600; cursor: pointer;
+        }
+        .req-link:hover { text-decoration: underline; color: #e08517; }
         #detail-link {
             display: inline-block; background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
             text-decoration: none; color: #0f172a; font-size: 13px; font-weight: 600; border: 1px solid #e2e8f0;
@@ -82,7 +86,7 @@
     <div id="details-panel">
         <h2 id="detail-bip-number"></h2>
         <p id="detail-title"></p>
-        <p id="detail-requires"></p>
+        <div id="detail-requires"></div>
         <a id="detail-link" href="#" target="_blank">View on GitHub</a>
     </div>
 </div>
@@ -294,25 +298,48 @@
         document.getElementById('detail-bip-number').innerText = `BIP ${nodeData.id}`;
         document.getElementById('detail-title').innerText = nodeData.fullTitle;
         
-        const reqText = nodeData.requiresList && nodeData.requiresList.length > 0 
-            ? `Requires: ${nodeData.requiresList.join(', ')}` 
-            : 'Requires: None';
-        document.getElementById('detail-requires').innerText = reqText;
+        const reqContainer = document.getElementById('detail-requires');
+        reqContainer.innerHTML = ''; 
+
+        if (nodeData.requiresList && nodeData.requiresList.length > 0) {
+            reqContainer.appendChild(document.createTextNode('Requires: '));
+            
+            nodeData.requiresList.forEach((reqId, index) => {
+                const link = document.createElement('a');
+                link.textContent = reqId;
+                link.href = '#';
+                link.className = 'req-link';
+                link.onclick = (e) => {
+                    e.preventDefault();
+                    goToNode(reqId);
+                };
+                reqContainer.appendChild(link);
+                
+                if (index < nodeData.requiresList.length - 1) {
+                    reqContainer.appendChild(document.createTextNode(', '));
+                }
+            });
+        } else {
+            reqContainer.innerText = 'Requires: None';
+        }
+
         document.getElementById('detail-link').href = nodeData.githubUrl;
     }
 
+    function goToNode(bipNum) {
+        if (!network || !nodesDataSet.get(bipNum)) {
+            alert(`BIP ${bipNum} not found in current dataset.`);
+            return;
+        }
+        network.selectNodes([bipNum]);
+        network.focus(bipNum, { scale: 1.2, animation: true });
+        showDetails(bipNum);
+    }
+
     function searchNode() {
-        if (!network) return;
         const input = document.getElementById('searchInput').value;
         const bipNum = parseInt(input, 10);
-        
-        if (nodesDataSet.get(bipNum)) {
-            network.selectNodes([bipNum]);
-            network.focus(bipNum, { scale: 1.2, animation: true });
-            showDetails(bipNum);
-        } else {
-            alert(`BIP ${bipNum} not found in current dataset.`);
-        }
+        goToNode(bipNum);
     }
 
     function resetView() {
