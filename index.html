@@ -75,7 +75,7 @@
     <div class="control-group">
         <button id="fetchBtn" onclick="buildBipTree()">Refresh Tree</button>
         <div style="display: flex; gap: 8px; margin-top: 10px;">
-            <input type="number" id="searchInput" placeholder="Search BIP #" style="flex-grow: 1;" disabled>
+            <input type="number" id="searchInput" placeholder="Search BIP #" style="flex-grow: 1;" onkeypress="if(event.key === 'Enter') searchNode()" disabled>
             <button id="searchBtn" onclick="searchNode()" disabled>Find</button>
         </div>
         <button id="resetViewBtn" class="secondary" onclick="resetView()" disabled>Reset View</button>
@@ -358,6 +358,7 @@
 
     function searchNode() {
         const input = document.getElementById('searchInput').value;
+        if (!input) return;
         const bipNum = parseInt(input, 10);
         goToNode(bipNum);
     }
