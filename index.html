@@ -17,13 +17,20 @@
         }
         h1 { font-size: 20px; margin-top: 0; color: #1a1a1a; }
         p { font-size: 14px; color: #666; line-height: 1.5; }
+        
+        .control-group { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+        input[type="number"] {
+            padding: 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-family: 'Inter';
+        }
         button {
             background-color: #f7931a; color: white; border: none; padding: 12px 16px;
             font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer;
-            transition: background-color 0.2s; margin-top: 20px;
+            transition: background-color 0.2s;
         }
         button:hover { background-color: #e08517; }
         button:disabled { background-color: #ccc; cursor: not-allowed; }
+        button.secondary { background-color: #64748b; }
+        button.secondary:hover { background-color: #475569; }
         
         #progress-container { margin-top: 20px; }
         #status-text { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: block; }
@@ -43,7 +50,7 @@
         }
         #detail-link:hover { background: #e2e8f0; }
 
-        #network-container { flex-grow: 1; height: 100%; background-color: #fafbfc; }
+        #network-container { flex-grow: 1; height: 100%; background-color: #fafbfc; position: relative; }
         div.vis-tooltip {
             font-family: 'Inter', sans-serif; font-size: 12px; background-color: #333;
             color: #fff; padding: 8px 12px; border-radius: 4px; border: none;
@@ -56,7 +63,14 @@
     <h1>BIP Dependency Tree</h1>
     <p>Fetches data directly from the bitcoin/bips GitHub repository to map out prerequisites.</p>
     
-    <button id="fetchBtn" onclick="buildBipTree()">Generate Tree</button>
+    <div class="control-group">
+        <button id="fetchBtn" onclick="buildBipTree()">Generate Tree</button>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <input type="number" id="searchInput" placeholder="Search BIP #" style="flex-grow: 1;" disabled>
+            <button id="searchBtn" onclick="searchNode()" disabled>Find</button>
+        </div>
+        <button id="resetViewBtn" class="secondary" onclick="resetView()" disabled>Reset View</button>
+    </div>
     
     <div id="progress-container" style="display: none;">
         <span id="status-text">Fetching repository index...</span>
@@ -79,6 +93,10 @@
     const GITHUB_REPO_TREE = "https://api.github.com/repos/bitcoin/bips/git/trees/master";
     const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/bitcoin/bips/master/";
     const GITHUB_WEB_BASE = "https://github.com/bitcoin/bips/blob/master/";
+
+    let network = null;
+    let nodesDataSet = null;
+    let edgesDataSet = null;
 
     async function fetchRepoTree() {
         const response = await fetch(GITHUB_REPO_TREE);
@@ -225,39 +243,82 @@
         statusText.innerText = `Rendering graph...`;
 
         const container = document.getElementById('network-container');
-        const nodesDataSet = new vis.DataSet(nodesData);
-        const data = { nodes: nodesDataSet, edges: new vis.DataSet(edgesData) };
+        nodesDataSet = new vis.DataSet(nodesData);
+        edgesDataSet = new vis.DataSet(edgesData);
+        
+        const data = { nodes: nodesDataSet, edges: edgesDataSet };
         
         const options = {
-            layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', nodeSpacing: 250, levelSeparation: 200, parentCentralization: true }},
-            physics: { enabled: false }, interaction: { hover: true, tooltipDelay: 200 }
+            layout: { 
+                hierarchical: { 
+                    direction: 'UD', 
+                    sortMethod: 'directed', 
+                    nodeSpacing: 180, 
+                    levelSeparation: 150, 
+                    parentCentralization: true 
+                }
+            },
+            physics: { enabled: false }, 
+            interaction: { 
+                hover: true, 
+                tooltipDelay: 200,
+                navigationButtons: true,
+                keyboard: true
+            }
         };
 
-        const network = new vis.Network(container, data, options);
+        network = new vis.Network(container, data, options);
         
         network.on("selectNode", function (params) {
             const nodeId = params.nodes[0];
-            const nodeData = nodesDataSet.get(nodeId);
-            
-            detailsPanel.style.display = 'block';
-            document.getElementById('detail-bip-number').innerText = `BIP ${nodeData.id}`;
-            document.getElementById('detail-title').innerText = nodeData.fullTitle;
-            
-            const reqText = nodeData.requiresList && nodeData.requiresList.length > 0 
-                ? `Requires: ${nodeData.requiresList.join(', ')}` 
-                : 'Requires: None';
-            document.getElementById('detail-requires').innerText = reqText;
-            
-            document.getElementById('detail-link').href = nodeData.githubUrl;
+            showDetails(nodeId);
         });
 
         network.on("deselectNode", function () {
-            detailsPanel.style.display = 'none';
+            document.getElementById('details-panel').style.display = 'none';
         });
 
         statusText.innerText = "Complete.";
         setTimeout(() => { progressContainer.style.display = 'none'; }, 2000);
-        btn.disabled = false;
+        
+        document.getElementById('searchInput').disabled = false;
+        document.getElementById('searchBtn').disabled = false;
+        document.getElementById('resetViewBtn').disabled = false;
+    }
+
+    function showDetails(nodeId) {
+        const nodeData = nodesDataSet.get(nodeId);
+        const detailsPanel = document.getElementById('details-panel');
+        
+        detailsPanel.style.display = 'block';
+        document.getElementById('detail-bip-number').innerText = `BIP ${nodeData.id}`;
+        document.getElementById('detail-title').innerText = nodeData.fullTitle;
+        
+        const reqText = nodeData.requiresList && nodeData.requiresList.length > 0 
+            ? `Requires: ${nodeData.requiresList.join(', ')}` 
+            : 'Requires: None';
+        document.getElementById('detail-requires').innerText = reqText;
+        document.getElementById('detail-link').href = nodeData.githubUrl;
+    }
+
+    function searchNode() {
+        if (!network) return;
+        const input = document.getElementById('searchInput').value;
+        const bipNum = parseInt(input, 10);
+        
+        if (nodesDataSet.get(bipNum)) {
+            network.selectNodes([bipNum]);
+            network.focus(bipNum, { scale: 1.2, animation: true });
+            showDetails(bipNum);
+        } else {
+            alert(`BIP ${bipNum} not found in current dataset.`);
+        }
+    }
+
+    function resetView() {
+        if (network) {
+            network.fit({ animation: true });
+        }
     }
 </script>
 
