@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin BIP Dependency Tree</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0; padding: 0; font-family: 'Inter', sans-serif;
+            display: flex; height: 100vh; background-color: #f8f9fa; color: #333;
+        }
+        #sidebar {
+            width: 320px; background: #ffffff; box-shadow: 2px 0 10px rgba(0,0,0,0.05);
+            padding: 24px; display: flex; flex-direction: column; z-index: 10;
+        }
+        h1 { font-size: 20px; margin-top: 0; color: #1a1a1a; }
+        p { font-size: 14px; color: #666; line-height: 1.5; }
+        button {
+            background-color: #f7931a; color: white; border: none; padding: 12px 16px;
+            font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer;
+            transition: background-color 0.2s; margin-top: 20px;
+        }
+        button:hover { background-color: #e08517; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        #progress-container { margin-top: 20px; }
+        #status-text { font-size: 13px; font-weight: 600; margin-bottom: 8px; display: block; }
+        .progress-bar-bg { background: #e2e8f0; border-radius: 4px; height: 8px; width: 100%; overflow: hidden; }
+        .progress-bar-fill { background: #f7931a; height: 100%; width: 0%; transition: width 0.1s; }
+
+        /* New Details Panel Styles */
+        #details-panel {
+            display: none; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;
+        }
+        #detail-bip-number { margin: 0 0 8px 0; font-size: 18px; color: #1a1a1a; }
+        #detail-title { font-weight: 600; color: #475569; font-size: 14px; margin: 0 0 12px 0; line-height: 1.4; }
+        #detail-requires { font-size: 13px; color: #64748b; margin: 0 0 16px 0; }
+        #detail-link {
+            display: inline-block; background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
+            text-decoration: none; color: #0f172a; font-size: 13px; font-weight: 600; border: 1px solid #e2e8f0;
+            transition: background-color 0.2s;
+        }
+        #detail-link:hover { background: #e2e8f0; }
+
+        #network-container { flex-grow: 1; height: 100%; background-color: #fafbfc; }
+        div.vis-tooltip {
+            font-family: 'Inter', sans-serif; font-size: 12px; background-color: #333;
+            color: #fff; padding: 8px 12px; border-radius: 4px; border: none;
+        }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h1>BIP Dependency Tree</h1>
+    <p>Fetches data directly from the bitcoin/bips GitHub repository to map out prerequisites.</p>
+    
+    <button id="fetchBtn" onclick="buildBipTree()">Generate Tree</button>
+    
+    <div id="progress-container" style="display: none;">
+        <span id="status-text">Fetching data...</span>
+        <div class="progress-bar-bg">
+            <div id="progress-fill" class="progress-bar-fill"></div>
+        </div>
+    </div>
+
+    <div id="details-panel">
+        <h2 id="detail-bip-number"></h2>
+        <p id="detail-title"></p>
+        <p id="detail-requires"></p>
+        <a id="detail-link" href="#" target="_blank">View on GitHub</a>
+    </div>
+</div>
+
+<div id="network-container"></div>
+
+<script>
+    const MAX_BIP_NUMBER = 400; 
+    const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/bitcoin/bips/master/bip-";
+    const GITHUB_WEB_BASE = "https://github.com/bitcoin/bips/blob/master/bip-";
+
+    function padNumber(num) {
+        return num.toString().padStart(4, '0');
+    }
+
+    async function fetchBipData(num) {
+        const paddedNum = padNumber(num);
+        let ext = '.mediawiki';
+        let response = await fetch(`${GITHUB_RAW_BASE}${paddedNum}${ext}`);
+        
+        if (!response.ok) {
+            ext = '.md';
+            response = await fetch(`${GITHUB_RAW_BASE}${paddedNum}${ext}`);
+        }
+
+        if (!response.ok) return null;
+        
+        const text = await response.text();
+        const parsedData = parseBipHeader(text, num);
+        
+        // Construct the readable GitHub web URL
+        parsedData.githubUrl = `${GITHUB_WEB_BASE}${paddedNum}${ext}`;
+        return parsedData;
+    }
+
+    function parseBipHeader(text, currentNum) {
+        const titleMatch = text.match(/Title:\s*(.+)/i);
+        const title = titleMatch ? titleMatch[1].trim() : "Unknown Title";
+
+        const requiresMatch = text.match(/Requires:\s*([0-9,\s]+)/i);
+        const requires = [];
+
+        if (requiresMatch) {
+            const rawReqs = requiresMatch[1].split(',');
+            for (let req of rawReqs) {
+                const parsedReq = parseInt(req.trim(), 10);
+                if (!isNaN(parsedReq)) {
+                    requires.push(parsedReq);
+                }
+            }
+        }
+
+        return { id: currentNum, title: title, requires: requires };
+    }
+
+    function formatLabel(id, title) {
+        const maxLineLength = 20;
+        const words = title.split(' ');
+        let lines = [];
+        let currentLine = words[0];
+
+        for (let i = 1; i < words.length; i++) {
+            if (currentLine.length + words[i].length + 1 <= maxLineLength) {
+                currentLine += ' ' + words[i];
+            } else {
+                lines.push(currentLine);
+                currentLine = words[i];
+            }
+        }
+        lines.push(currentLine);
+        return `BIP ${id}\n\n` + lines.join('\n');
+    }
+
+    async function buildBipTree() {
+        const btn = document.getElementById('fetchBtn');
+        const progressContainer = document.getElementById('progress-container');
+        const statusText = document.getElementById('status-text');
+        const progressFill = document.getElementById('progress-fill');
+        const detailsPanel = document.getElementById('details-panel');
+        
+        btn.disabled = true;
+        progressContainer.style.display = 'block';
+        detailsPanel.style.display = 'none'; // Hide details on new fetch
+        
+        const nodesData = [];
+        const edgesData = [];
+        let completed = 0;
+
+        const batchSize = 50;
+        for (let i = 1; i <= MAX_BIP_NUMBER; i += batchSize) {
+            const batchPromises = [];
+            for (let j = i; j < i + batchSize && j <= MAX_BIP_NUMBER; j++) {
+                batchPromises.push(
+                    fetchBipData(j).then(result => {
+                        completed++;
+                        const percent = Math.round((completed / MAX_BIP_NUMBER) * 100);
+                        progressFill.style.width = percent + '%';
+                        statusText.innerText = `Fetching... ${percent}%`;
+                        return result;
+                    })
+                );
+            }
+            
+            const batchResults = await Promise.all(batchPromises);
+            
+            for (let bip of batchResults) {
+                if (bip) {
+                    // Include extra data in the node object for the click event
+                    nodesData.push({ 
+                        id: bip.id, 
+                        label: formatLabel(bip.id, bip.title),
+                        title: `BIP ${bip.id}: ${bip.title}`, 
+                        fullTitle: bip.title,
+                        githubUrl: bip.githubUrl,
+                        requiresList: bip.requires,
+                        shape: 'box', margin: 12,
+                        color: { background: '#ffffff', border: '#e2e8f0', highlight: { background: '#fef5e8', border: '#f7931a' }},
+                        font: { face: 'Inter', size: 12, color: '#1a1a1a' },
+                        borderWidth: 1, shadow: { enabled: true, color: 'rgba(0,0,0,0.05)', size: 5, x: 2, y: 2 }
+                    });
+
+                    for (let req of bip.requires) {
+                        edgesData.push({ 
+                            from: bip.id, to: req, 
+                            arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+                            color: { color: '#cbd5e1', highlight: '#f7931a' },
+                            smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 }
+                        });
+                    }
+                }
+            }
+        }
+
+        statusText.innerText = `Rendering graph...`;
+
+        const container = document.getElementById('network-container');
+        const nodesDataSet = new vis.DataSet(nodesData);
+        const data = { nodes: nodesDataSet, edges: new vis.DataSet(edgesData) };
+        
+        const options = {
+            layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', nodeSpacing: 250, levelSeparation: 200, parentCentralization: true }},
+            physics: { enabled: false }, interaction: { hover: true, tooltipDelay: 200 }
+        };
+
+        const network = new vis.Network(container, data, options);
+        
+        // Add click event listener for nodes
+        network.on("selectNode", function (params) {
+            const nodeId = params.nodes[0];
+            const nodeData = nodesDataSet.get(nodeId);
+            
+            detailsPanel.style.display = 'block';
+            document.getElementById('detail-bip-number').innerText = `BIP ${nodeData.id}`;
+            document.getElementById('detail-title').innerText = nodeData.fullTitle;
+            
+            const reqText = nodeData.requiresList && nodeData.requiresList.length > 0 
+                ? `Requires: ${nodeData.requiresList.join(', ')}` 
+                : 'Requires: None';
+            document.getElementById('detail-requires').innerText = reqText;
+            
+            document.getElementById('detail-link').href = nodeData.githubUrl;
+        });
+
+        // Hide panel when clicking empty space
+        network.on("deselectNode", function () {
+            detailsPanel.style.display = 'none';
+        });
+
+        statusText.innerText = "Complete.";
+        setTimeout(() => { progressContainer.style.display = 'none'; }, 2000);
+        btn.disabled = false;
+    }
+</script>
+
+</body>
+</html>
