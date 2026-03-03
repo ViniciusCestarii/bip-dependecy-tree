@@ -85,6 +85,17 @@
             color: #f7931a; text-decoration: none; font-weight: 600; cursor: pointer;
         }
         .req-link:hover { text-decoration: underline; color: #e08517; }
+
+        .replacement-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 600; margin-top: 4px;
+        }
+        .badge-replaced {
+            background: #fef2f2; color: #dc2626; border: 1px solid #fecaca;
+        }
+        .badge-replaces {
+            background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0;
+        }
         
         #detail-link {
             display: inline-block; background: #f1f5f9; padding: 8px 12px; border-radius: 6px;
@@ -159,6 +170,8 @@
 
         <div id="detail-requires" class="dependency-row"></div>
         <div id="detail-required-by" class="dependency-row"></div>
+        <div id="detail-replaces" class="dependency-row"></div>
+        <div id="detail-replaced-by" class="dependency-row"></div>
         <a id="detail-link" href="#" target="_blank">View on GitHub</a>
     </div>
 </div>
@@ -236,13 +249,35 @@
             }
         }
 
+        const replacesMatch = text.match(/Replaces:\s*([0-9,\s]+)/i);
+        const replaces = [];
+        if (replacesMatch) {
+            const rawReps = replacesMatch[1].split(',');
+            for (let rep of rawReps) {
+                const parsed = parseInt(rep.trim(), 10);
+                if (!isNaN(parsed)) replaces.push(parsed);
+            }
+        }
+
+        const supersededByMatch = text.match(/(?:Superseded-By|Replaced-By|Proposed-Replacement):\s*([0-9,\s]+)/i);
+        const replacedBy = [];
+        if (supersededByMatch) {
+            const rawSups = supersededByMatch[1].split(',');
+            for (let sup of rawSups) {
+                const parsed = parseInt(sup.trim(), 10);
+                if (!isNaN(parsed)) replacedBy.push(parsed);
+            }
+        }
+
         return { 
             id: currentNum, 
             title: title, 
             layer: layerMatch ? layerMatch[1].trim() : "N/A",
             status: statusMatch ? statusMatch[1].trim() : "N/A",
             type: typeMatch ? typeMatch[1].trim() : "N/A",
-            requires: requires 
+            requires: requires,
+            replaces: replaces,
+            replacedBy: replacedBy
         };
     }
 
@@ -314,6 +349,24 @@
             
             for (let bip of batchResults) {
                 if (bip) {
+                    // Determine visual style based on replacement status
+                    let nodeColor, nodeFontColor, nodeBorderWidth;
+                    if (bip.replacedBy && bip.replacedBy.length > 0) {
+                        // This BIP was replaced — dimmed with red dashed border
+                        nodeColor = { background: '#fef2f2', border: '#f87171', highlight: { background: '#fee2e2', border: '#dc2626' }};
+                        nodeFontColor = '#9ca3af';
+                        nodeBorderWidth = 2;
+                    } else if (bip.replaces && bip.replaces.length > 0) {
+                        // This BIP replaces another — green accent
+                        nodeColor = { background: '#f0fdf4', border: '#4ade80', highlight: { background: '#dcfce7', border: '#16a34a' }};
+                        nodeFontColor = '#1a1a1a';
+                        nodeBorderWidth = 2;
+                    } else {
+                        nodeColor = { background: '#ffffff', border: '#e2e8f0', highlight: { background: '#fef5e8', border: '#f7931a' }};
+                        nodeFontColor = '#1a1a1a';
+                        nodeBorderWidth = 1;
+                    }
+
                     fullNodesData.push({ 
                         id: bip.id, 
                         label: formatLabel(bip.id, bip.title),
@@ -324,18 +377,37 @@
                         bipType: bip.type,
                         githubUrl: bip.githubUrl,
                         requiresList: bip.requires,
+                        replacesList: bip.replaces,
+                        replacedByList: bip.replacedBy,
                         shape: 'box', margin: 12,
-                        color: { background: '#ffffff', border: '#e2e8f0', highlight: { background: '#fef5e8', border: '#f7931a' }},
-                        font: { face: 'Inter', size: 12, color: '#1a1a1a' },
-                        borderWidth: 1, shadow: { enabled: true, color: 'rgba(0,0,0,0.05)', size: 5, x: 2, y: 2 }
+                        color: nodeColor,
+                        font: { face: 'Inter', size: 12, color: nodeFontColor },
+                        borderWidth: nodeBorderWidth, 
+                        shapeProperties: (bip.replacedBy && bip.replacedBy.length > 0) ? { borderDashes: [6, 4] } : {},
+                        shadow: { enabled: true, color: 'rgba(0,0,0,0.05)', size: 5, x: 2, y: 2 }
                     });
 
                     for (let req of bip.requires) {
                         edgesData.push({ 
                             from: bip.id, to: req, 
+                            edgeType: 'dependency',
                             arrows: { to: { enabled: true, scaleFactor: 0.5 } },
                             color: { color: '#cbd5e1', highlight: '#f7931a' },
                             smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 }
+                        });
+                    }
+
+                    // Add dashed replacement edges
+                    for (let repId of bip.replaces) {
+                        edgesData.push({
+                            from: bip.id, to: repId,
+                            edgeType: 'replacement',
+                            arrows: { to: { enabled: true, scaleFactor: 0.5, type: 'triangle' } },
+                            color: { color: '#f87171', highlight: '#dc2626' },
+                            dashes: [8, 6],
+                            width: 2,
+                            smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 },
+                            title: `BIP ${bip.id} replaces BIP ${repId}`
                         });
                     }
                 }
@@ -492,6 +564,23 @@
         }
     }
 
+    function createClickableLinksInline(container, idsArray) {
+        idsArray.forEach((id, index) => {
+            const link = document.createElement('a');
+            link.textContent = `BIP ${id}`;
+            link.href = '#';
+            link.className = 'req-link';
+            link.onclick = (e) => {
+                e.preventDefault();
+                goToNode(id);
+            };
+            container.appendChild(link);
+            if (index < idsArray.length - 1) {
+                container.appendChild(document.createTextNode(', '));
+            }
+        });
+    }
+
     function showDetails(nodeId, explicitNodeData = null) {
         const nodeData = explicitNodeData || nodesDataSet.get(nodeId);
         if (!nodeData) return;
@@ -510,12 +599,36 @@
 
         const requiredByEdges = edgesDataSet.get({
             filter: function (item) {
-                return item.to === nodeId;
+                return item.to === nodeId && item.edgeType === 'dependency';
             }
         });
         const requiredByList = requiredByEdges.map(edge => edge.from);
         
         createClickableLinks('detail-required-by', 'Required by: ', requiredByList);
+
+        // Replaces / Replaced-by info
+        const replacesContainer = document.getElementById('detail-replaces');
+        const replacedByContainer = document.getElementById('detail-replaced-by');
+        replacesContainer.innerHTML = '';
+        replacedByContainer.innerHTML = '';
+
+        if (nodeData.replacesList && nodeData.replacesList.length > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'replacement-badge badge-replaces';
+            badge.textContent = '↑ REPLACES';
+            replacesContainer.appendChild(badge);
+            replacesContainer.appendChild(document.createTextNode(' '));
+            createClickableLinksInline(replacesContainer, nodeData.replacesList);
+        }
+
+        if (nodeData.replacedByList && nodeData.replacedByList.length > 0) {
+            const badge = document.createElement('span');
+            badge.className = 'replacement-badge badge-replaced';
+            badge.textContent = '✗ REPLACED BY';
+            replacedByContainer.appendChild(badge);
+            replacedByContainer.appendChild(document.createTextNode(' '));
+            createClickableLinksInline(replacedByContainer, nodeData.replacedByList);
+        }
 
         document.getElementById('detail-link').href = nodeData.githubUrl;
     }
