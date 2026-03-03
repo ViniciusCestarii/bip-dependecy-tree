@@ -529,6 +529,11 @@
             document.getElementById('details-panel').style.display = 'none';
         });
 
+        network.once("stabilizationIterationsDone", function () {
+            // Center on the graph with a readable zoom level instead of fitting everything
+            network.moveTo({ scale: 0.5, animation: { duration: 800, easingFunction: 'easeInOutQuad' } });
+        });
+
         statusText.innerText = "Complete.";
         setTimeout(() => { progressContainer.style.display = 'none'; }, 2000);
         
