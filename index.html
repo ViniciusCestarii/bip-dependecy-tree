@@ -492,19 +492,28 @@
         
         const options = {
             layout: { 
+                improvedLayout: true,
                 hierarchical: { 
-                    direction: 'UD',
-                    nodeSpacing: 140, 
-                    levelSeparation: 160, 
-                    treeSpacing: 120,
-                    parentCentralization: true 
+                    direction: 'LR',
+                    sortMethod: 'directed',
+                    nodeSpacing: 60, 
+                    levelSeparation: 200, 
+                    treeSpacing: 40,
+                    parentCentralization: true,
+                    blockShifting: true,
+                    edgeMinimization: true
                 }
             },
             physics: { 
                 enabled: true,
                 hierarchicalRepulsion: {
-                    nodeDistance: 140,
-                    avoidOverlap: 1
+                    nodeDistance: 80,
+                    centralGravity: 0.2,
+                    avoidOverlap: 0.8
+                },
+                stabilization: {
+                    iterations: 300,
+                    updateInterval: 25
                 }
             }, 
             interaction: { 
@@ -530,8 +539,8 @@
         });
 
         network.once("stabilizationIterationsDone", function () {
-            // Center on the graph with a readable zoom level instead of fitting everything
-            network.moveTo({ scale: 0.5, animation: { duration: 800, easingFunction: 'easeInOutQuad' } });
+            network.setOptions({ physics: { enabled: false } });
+            network.moveTo({ scale: 0.7, animation: { duration: 800, easingFunction: 'easeInOutQuad' } });
         });
 
         statusText.innerText = "Complete.";
